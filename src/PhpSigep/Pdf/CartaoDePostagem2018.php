@@ -3,6 +3,7 @@
 namespace PhpSigep\Pdf;
 
 use PhpSigep\Bootstrap;
+use PhpSigep\BootstrapException;
 use PhpSigep\Model\ObjetoPostal;
 use PhpSigep\Model\ServicoDePostagem;
 use PhpSigep\Model\ServicoAdicional;
@@ -28,6 +29,15 @@ class CartaoDePostagem2018
      * @var string
      */
     private $logoFile;
+    /**
+     * Uma imagem com tamanho 120 x 140
+     * @var string
+     */
+    public $simbolo_de_encaminhamento;
+    /**
+     * @var string
+     */
+    public $label_repository;
 
     /**
      * Volume do pacote
@@ -39,10 +49,12 @@ class CartaoDePostagem2018
      * @param \PhpSigep\Model\PreListaDePostagem $plp
      * @param int $idPlpCorreios
      * @param string $logoFile
+     * @param array $chancelas
+     * @param Callable $label_repository
      * @throws InvalidArgument
      *      Se o arquivo $logoFile não existir.
      */
-    public function __construct($plp, $idPlpCorreios, $logoFile, $chancelas = array())
+    public function __construct($plp, $idPlpCorreios, $logoFile, $chancelas = array(), $label_repository = null)
     {
         if ($logoFile && !@getimagesize($logoFile)) {
             throw new InvalidArgument('O arquivo "' . $logoFile . '" não existe.');
@@ -51,11 +63,12 @@ class CartaoDePostagem2018
         $this->plp = $plp;
         $this->idPlpCorreios = $idPlpCorreios;
         $this->logoFile = $logoFile;
+        $this->label_repository = $label_repository;
 
         $this->init();
     }
 
-    public function render($dest='', $filename = '')
+    public function render($dest='', $filename = '', Callable $custom = null)
     {
         $cacheKey = md5(serialize($this->plp) . $this->idPlpCorreios . get_class($this));
         if ($pdfContent = Bootstrap::getConfig()->getCacheInstance()->getItem($cacheKey)) {
@@ -66,10 +79,10 @@ class CartaoDePostagem2018
             echo $pdfContent;
         } else {
             if($dest == 'S'){
-                return $this->_render($dest, $filename);
+                return $this->_render($dest, $filename, $custom);
             }
             else{
-                $this->_render($dest, $filename);
+                $this->_render($dest, $filename, $custom);
                 Bootstrap::getConfig()->getCacheInstance()->setItem($cacheKey, $this->pdf->buffer);
             }
         }
@@ -78,9 +91,11 @@ class CartaoDePostagem2018
     /**
      * @param string $dest
      * @param string $fileName
+     * @param Callable $custom
      * @return mixed
+     * @throws BootstrapException
      */
-    private function _render ($dest='', $fileName= '')
+    private function _render ($dest='', $fileName= '', Callable $custom = null)
     {
         $un = 72 / 25.4;
         $wFourAreas = $this->pdf->w;
@@ -122,6 +137,8 @@ class CartaoDePostagem2018
         $objetosPostais = $this->plp->getEncomendas();
         while (count($objetosPostais)) {
             $this->pdf->AddPage();
+
+            if ($custom) { $custom($this); }
 
             if (Bootstrap::getConfig()->getSimular()) {
                 $this->pdf->SetFont('Arial', 'B', 50);
@@ -169,7 +186,6 @@ class CartaoDePostagem2018
 
             $this->setFillColor(150, 150, 200);
 
-            $simbolo_de_encaminhamento = null;
             $chancela = null;
             $servicoDePostagem = $objetoPostal->getServicoDePostagem();
 
@@ -187,7 +203,6 @@ class CartaoDePostagem2018
                 case ServicoDePostagem::SERVICE_PAC_REVERSO_LM:
                 case ServicoDePostagem::SERVICE_PAC_CONTRATO_UO_LM:
                 case ServicoDePostagem::SERVICE_PAC_CONTRATO_AGENCIA_PAGAMENTO_NA_ENTREGA_LM:
-                case ServicoDePostagem::SERVICE_PAC_CONTRATO_AGENCIA_TA:
                     $chancela = new Pac2018(86, $this->pdf->GetY() + 13, $nomeRemetente, $accessData);
                     $_texto = 'PAC';
                     break;
@@ -204,42 +219,37 @@ class CartaoDePostagem2018
                 case ServicoDePostagem::SERVICE_SEDEX_CONTRATO_UO_LM:
                 case ServicoDePostagem::SERVICE_SEDEX_REVERSO_CONTRATO_AGENCIA:
                 case ServicoDePostagem::SERVICE_SEDEX_CONTRATO_AGENCIA_PAGAMENTO_NA_ENTREGA_LM:
-                case ServicoDePostagem::SERVICE_SEDEX_CONTRATO_AGENCIA_TA:
-                    $simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-standard.png';
+                case ServicoDePostagem::SERVICE_SEDEX_CONTRATO_AGENCIA_TA || ServicoDePostagem::SERVICE_SEDEX_REVERSO:
+                    $this->simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-standard.png';
                     $_texto = 'SEDEX';
                     break;
                 case ServicoDePostagem::SERVICE_SEDEX_12:
-                    $simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-expresso.png';
+                    $this->simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-expresso.png';
                     $_texto = 'SEDEX 12';
                     break;
                 case ServicoDePostagem::SERVICE_SEDEX_10:
                 case ServicoDePostagem::SERVICE_SEDEX_10_PACOTE:
-                    $simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-expresso.png';
+                    $this->simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-expresso.png';
                     $_texto = 'SEDEX 10';
                     break;
                 case ServicoDePostagem::SERVICE_SEDEX_HOJE_40290:
                 case ServicoDePostagem::SERVICE_SEDEX_HOJE_40878:
-                    $simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-expresso.png';
+                    $this->simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-expresso.png';
                     $_texto = 'SEDEX Hoje';
                     break;
                 case ServicoDePostagem::SERVICE_CARTA_COMERCIAL_A_FATURAR:
                 case ServicoDePostagem::SERVICE_CARTA_REGISTRADA:
                 case ServicoDePostagem::SERVICE_CARTA_COMERCIAL_REGISTRADA_CTR_EP_MAQ_FRAN:
                 case ServicoDePostagem::SERVICE_CARTA_COM_A_FATURAR_SELO_E_SE:
-                    $simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sem-especificacao.png';
+                    $this->simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sem-especificacao.png';
                     $_texto = 'Carta';
                     break;
-                case ServicoDePostagem::SERVICE_SEDEX_REVERSO:
-                    $simbolo_de_encaminhamento = realpath(dirname(__FILE__)) . '/simbolo-sedex-standard.png';
-                    $_texto = 'SEDEX';
-                    break;
                 default:
-                    $simbolo_de_encaminhamento = null;
                     break;
             }
 
-            if ($simbolo_de_encaminhamento) {
-                $this->pdf->Image($simbolo_de_encaminhamento, 81, $this->pdf->GetY() + 2, 20, 20);
+            if ($this->simbolo_de_encaminhamento) {
+                $this->pdf->Image($this->simbolo_de_encaminhamento, 81, $this->pdf->GetY() + 2, 20, 20);
             } else if ($chancela) {
                 $chancela->draw($this->pdf);
             }
@@ -675,12 +685,12 @@ class CartaoDePostagem2018
         return $this->pdf->GetY();
     }
 
-    private function setFillColor ($r, $g, $b)
+    public function setFillColor ($r, $g, $b)
     {
         $this->pdf->SetFillColor ($r, $g, $b);
     }
 
-    private function t ($w, $txt, $ln, $align, $h = null, $multiLines = false, $utf8 = true)
+    public function t ($w, $txt, $ln, $align, $h = null, $multiLines = false, $utf8 = true)
     {
         if ($utf8) {
             $txt = $this->_($txt);
@@ -700,7 +710,7 @@ class CartaoDePostagem2018
         }
     }
 
-    private function multiLines ($w, $txt, $align, $h = null, $utf8 = true)
+    public function multiLines ($w, $txt, $align, $h = null, $utf8 = true)
     {
         $this->t($w, $txt, null, $align, $h, true, $utf8);
     }
